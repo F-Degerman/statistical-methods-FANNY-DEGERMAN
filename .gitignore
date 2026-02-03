@@ -5,7 +5,8 @@ __pycache__/
 
 # C extensions
 *.so
-
+# data files
+Laboration-Statistik/housing.csv 
 # Distribution / packaging
 .Python
 build/
