@@ -2,67 +2,94 @@ import numpy as np
 from scipy import stats
 
 class LinearRegression:
-    """
-    Multipel linjär regression
-    """
-    def __init__(self, alpha=0.05):     # 0.5 betyder 95% konfidensintervall 
+    def __init__(self, alpha=0.05):
+        self.alpha = alpha
 
-        self.alpha = alpha              #för att tolka resultaten statistiskt
+        # Fit-resultat (behövs av din notebook)
+        self.b = None
+        self.cov = None
+        self.sigma2 = None
+        self.R2 = None
 
+        # Frihetsgrader (behövs för tester)
+        self.n = None
+        self.d = None
+        self.df = None
+
+        # Summor (behövs för F-test och R2)
+        self.SSE = None
+        self.SSR = None
+        self.Syy = None
 
     def fit(self, X, y):
-        """
-        Skattar beta med OLS:
-        b = (X^T X)^(-1) X^T y
-        """
-        # Lägg till en kolumn av 1:or för intercept
-        X_with_intercept = np.column_stack([np.ones(X.shape[0]), X])
-        
-        # Beräkna beta med OLS formel
-        self.b_hat = np.linalg.inv(X_with_intercept.T @ X_with_intercept) @ X_with_intercept.T @ y
-        
-        # Spara antal observationer och prediktorer
-        self.n_sample_size = X.shape[0]
-        self.n_predictors = X.shape[1]
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y, dtype=float).reshape(-1)
+
+        self.n, p = X.shape          # p inkluderar intercept-kolumnen
+        self.d = p - 1               # antal prediktorer exkl intercept
+        self.df = self.n - p         # = n - (d+1)
+
+        # OLS: b = (X^T X)^(-1) X^T y  (pseudoinvers för robusthet)
+        XtX_inv = np.linalg.pinv(X.T @ X)
+        self.b = XtX_inv @ (X.T @ y)
+
+        y_hat = X @ self.b
+        residuals = y - y_hat
+
+        self.SSE = float(np.sum(residuals**2))
+        y_mean = float(np.mean(y))
+        self.Syy = float(np.sum((y - y_mean) ** 2))
+        self.SSR = self.Syy - self.SSE
+
+        self.sigma2 = self.SSE / self.df if self.df > 0 else np.nan
+        self.cov = XtX_inv * self.sigma2 if np.isfinite(self.sigma2) else np.full_like(XtX_inv, np.nan)
+
+        self.R2 = self.SSR / self.Syy if self.Syy > 0 else np.nan
+        return self
 
     def predict(self, X):
-        """
-        Returnerar predikterade värden för X
-        """
-        # Lägg till en kolumn av 1:or för intercept
-        X_with_intercept = np.column_stack([np.ones(X.shape[0]), X])
-        
-        # Returnera predikterade värden
-        return X_with_intercept @ self.b_hat
+        X = np.asarray(X, dtype=float)
+        return X @ self.b
 
-    def rmse(self, X, y):   
-        """
-        Beräknar Root Mean Squared Error (RMSE) för modellen
-        """
-        y_pred = self.predict(X)
-        residuals = y - y_pred
-        rmse_value = np.sqrt(np.mean(residuals**2))
-        return rmse_value   
+    def mse(self, X, y):
+        y = np.asarray(y, dtype=float).reshape(-1)
+        e = y - self.predict(X)
+        return float(np.mean(e**2))
 
+    def rmse(self, X, y):
+        return float(np.sqrt(self.mse(X, y)))
 
-    def f_test(self):   
-        # F-test för att testa den övergripande signifikansen av modellen
-            self.f_statistic = (self.ssr / self.n_predictors) / (self.sse / (self.n_sample_size - self.n_predictors - 1))
-            self.f_p_value = 1 - stats.f.cdf(self.f_statistic, self.n_predictors, self.n_sample_size - self.n_predictors - 1)   
+    def std(self):
+        return float(np.sqrt(self.sigma2))
 
+    def regression_significance(self):
+        # H0: alla beta (utom intercept) = 0
+        if self.d is None or self.d <= 0 or not np.isfinite(self.sigma2) or self.sigma2 == 0:
+            return np.nan, np.nan
 
-    def t_tests(self):
-        # t-test för att testa signifikansen av varje enskild prediktor
-        self.t_statistics = self.b_hat / np.sqrt(self.sse / (self.n_sample_size - self.n_predictors - 1) * np.diag(np.linalg.inv(X.T @ X)))
-        self.t_p_values = 2 * (1 - stats.t.cdf(np.abs(self.t_statistics), df=self.n_sample_size - self.n_predictors - 1))   
+        F_stat = (self.SSR / self.d) / self.sigma2
+        p_val = stats.f.sf(F_stat, self.d, self.df)
+        return float(F_stat), float(p_val)
 
-    
+    def parameter_tests(self):
+        se = np.sqrt(np.diag(self.cov))
+        t_stat = self.b / se
+
+        # tvåsidigt p-värde
+        p_vals = 2 * stats.t.sf(np.abs(t_stat), df=self.df)
+        return {"se": se, "t": t_stat, "p": p_vals}
+
     def confidence_intervals(self):
-        # Konfidensintervall för varje koefficient
-        critical_value = stats.t.ppf(1 - self.alpha / 2, df=self.n_sample_size - self.n_predictors - 1)
-        standard_errors = np.sqrt(self.sse / (self.n_sample_size - self.n_predictors - 1) * np.diag(np.linalg.inv(X.T @ X)))
-        self.confidence_intervals = np.column_stack((self.b_hat - critical_value * standard_errors, self.b_hat + critical_value * standard_errors)) 
+        tests = self.parameter_tests()
+        se = tests["se"]
+        t_crit = stats.t.isf(self.alpha / 2, df=self.df)
 
-    
-    
+        low = self.b - t_crit * se
+        high = self.b + t_crit * se
+        return low, high
 
+    def pearson_matrix(self, X, include_intercept=False):
+        X = np.asarray(X, dtype=float)
+        if not include_intercept:
+            X = X[:, 1:]
+        return np.corrcoef(X, rowvar=False)
