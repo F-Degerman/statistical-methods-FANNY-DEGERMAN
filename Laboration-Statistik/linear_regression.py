@@ -22,6 +22,7 @@ class LinearRegression:
         self.Syy = None
 
     def fit(self, X, y):
+        # Regressionen implementeras med numpy-matriser, därför konverteras X och y till numpy-array. 
         X = np.asarray(X, dtype=float)
         y = np.asarray(y, dtype=float).reshape(-1)
 
@@ -50,7 +51,13 @@ class LinearRegression:
         X = np.asarray(X, dtype=float)
         return X @ self.b
 
-    def regression_significance(self):
+    def variance(self):
+        return float(self.sigma2)
+
+    def std(self):
+        return float(np.sqrt(self.sigma2))
+
+    def f_test(self):
         # H0: alla betas (utom intercept) = 0
         if self.d <= 0 or not np.isfinite(self.sigma2) or self.sigma2 == 0:
             return np.nan, np.nan
@@ -58,7 +65,7 @@ class LinearRegression:
         p = stats.f.sf(F, self.d, self.df)
         return float(F), float(p)
 
-    def parameter_tests(self):
+    def t_tests(self):
         se = np.sqrt(np.diag(self.cov))
         t = self.b / se
         p = 2 * stats.t.sf(np.abs(t), df=self.df)
@@ -70,3 +77,17 @@ class LinearRegression:
         low = self.b - tcrit * se
         high = self.b + tcrit * se
         return low, high
+
+    def mse(self, X, y):
+        y = np.asarray(y, dtype=float).reshape(-1)
+        e = y - self.predict(X)
+        return float(np.mean(e**2))
+
+    def rmse(self, X, y):
+        return float(np.sqrt(self.mse(X, y)))
+
+    def pearson_X(self, X, include_intercept=False):
+        X = np.asarray(X, dtype=float)
+        if not include_intercept:
+            X = X[:, 1:]
+        return np.corrcoef(X, rowvar=False)
