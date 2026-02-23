@@ -31,7 +31,7 @@ class LinearRegression:
         self.d = p - 1                      
         self.df = self.n - p               
 
-        XtX_inv = np.linalg.inv(X.T @ X)    
+        XtX_inv = np.linalg.pinv(X.T @ X)    # pseudo-invers av X'X för att hantera singularitet (multikollinearitet) 
         self.b = XtX_inv @ (X.T @ y)
 
         y_hat = X @ self.b                  # predikterade värden
